@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Карта Мыслей Мира</title>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.1.2/dist/maplibre-gl.css">
+    <script src="https://unpkg.com/maplibre-gl@4.1.2/dist/maplibre-gl.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+
+        .add-button {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            width: 64px;
+            height: 64px;
+            background: #3b82f6;
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 32px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+            transition: all 0.2s;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .add-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.5);
+        }
+
+        .add-button:active {
+            transform: scale(0.95);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-content h2 {
+            font-size: 24px;
+            color: #1f2937;
+            margin-bottom: 20px;
+        }
+
+        .modal-content textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+            resize: vertical;
+            transition: all 0.2s;
+        }
+
+        .modal-content textarea:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .char-counter {
+            text-align: right;
+            margin-top: 8px;
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        .char-counter.warning {
+            color: #ef4444;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .modal-buttons button {
+            flex: 1;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-publish {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-publish:hover {
+            background: #2563eb;
+        }
+
+        .btn-publish:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .btn-cancel {
+            background: #f3f4f6;
+            color: #4b5563;
+        }
+
+        .btn-cancel:hover {
+            background: #e5e7eb;
+        }
+
+        .thought-marker {
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid #3b82f6;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            color: #1f2937;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .thought-marker:hover {
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            z-index: 10;
+            white-space: normal;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <button class="add-button" id="addButton">+</button>
+
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <h2>Поделитесь своей мыслью</h2>
+            <textarea 
+                id="thoughtInput" 
+                placeholder="Введите вашу мысль..."
+                maxlength="200"
+            ></textarea>
+            <div class="char-counter" id="charCounter">0/200</div>
+            <div class="modal-buttons">
+                <button class="btn-cancel" id="cancelButton">Отмена</button>
+                <button class="btn-publish" id="publishButton">Опубликовать</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+    <script>
+        // ===== КОНФИГУРАЦИЯ FIREBASE =====
+        // ЗАМЕНИ НА СВОЮ из Firebase Console!
+        const firebaseConfig = {
+            apiKey: "AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            authDomain: "world-thoughts-xxx.firebaseapp.com",
+            databaseURL: "https://world-thoughts-xxx-default-rtdb.firebaseio.com",
+            projectId: "world-thoughts-xxx",
+            storageBucket: "world-thoughts-xxx.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abcdef123456"
+        };
+
+        // Инициализация Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        let map;
+        let thoughts = [];
+        let markerElements = new Map();
+        let markers = new Map();
+        const MIN_ZOOM_FOR_THOUGHTS = 8;
+
+        // Real-time подписка на новые мысли
+        db.ref('thoughts').on('child_added', (snapshot) => {
+            const thought = snapshot.val();
+            
+            if (!thoughts.find(t => t.id === thought.id)) {
+                thoughts.push(thought);
+                if (map) {
+                    createMarker(thought);
+                    updateMarkersVisibility();
+                }
+            }
+        });
+
+        function createMarker(thought) {
+            if (markers.has(thought.id)) return;
+            
+            const el = document.createElement('div');
+            el.className = 'thought-marker';
+            el.textContent = thought.text;
+
+            const marker = new maplibregl.Marker({ element: el })
+                .setLngLat([thought.lng, thought.lat])
+                .addTo(map);
+
+            markers.set(thought.id, marker);
+            markerElements.set(thought.id, el);
+        }
+
+        function updateMarkersVisibility() {
+            if (!map) return;
+            
+            const currentZoom = map.getZoom();
+            
+            markerElements.forEach((element) => {
+                if (currentZoom >= MIN_ZOOM_FOR_THOUGHTS) {
+                    element.style.display = 'block';
+                    element.style.opacity = '1';
+                    
+                    const minZoom = 8;
+                    const maxZoom = 13;
+                    
+                    let fontSize, padding, maxWidth;
+                    if (currentZoom <= minZoom) {
+                        fontSize = '8px';
+                        padding = '3px 5px';
+                        maxWidth = '60px';
+                    } else if (currentZoom >= maxZoom) {
+                        fontSize = '13px';
+                        padding = '8px 12px';
+                        maxWidth = '180px';
+                    } else {
+                        const progress = (currentZoom - minZoom) / (maxZoom - minZoom);
+                        const size = 8 + (13 - 8) * progress;
+                        const pad = 3 + (8 - 3) * progress;
+                        const width = 60 + (180 - 60) * progress;
+                        fontSize = size + 'px';
+                        padding = pad + 'px ' + (pad * 1.5) + 'px';
+                        maxWidth = width + 'px';
+                    }
+                    
+                    element.style.fontSize = fontSize;
+                    element.style.padding = padding;
+                    element.style.maxWidth = maxWidth;
+                } else {
+                    element.style.display = 'none';
+                }
+            });
+        }
+
+        function getRandomNearbyCoords() {
+            const center = map.getCenter();
+            const bounds = map.getBounds();
+            const latRange = bounds.getNorth() - bounds.getSouth();
+            const lngRange = bounds.getEast() - bounds.getWest();
+            
+            const randomLat = center.lat + (Math.random() - 0.5) * latRange * 0.4;
+            const randomLng = center.lng + (Math.random() - 0.5) * lngRange * 0.4;
+            
+            return { lat: randomLat, lng: randomLng };
+        }
+
+        async function publishThought(text) {
+            try {
+                const coords = getRandomNearbyCoords();
+                const id = `thought:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                
+                const thoughtData = {
+                    id: id,
+                    text: text.trim(),
+                    lat: coords.lat,
+                    lng: coords.lng,
+                    timestamp: Date.now()
+                };
+
+                await db.ref('thoughts/' + id).set(thoughtData);
+            } catch (error) {
+                console.error('Error publishing thought:', error);
+                alert('Ошибка при публикации мысли. Попробуйте еще раз.');
+            }
+        }
+
+        function initializeUI() {
+            const modal = document.getElementById('modal');
+            const addButton = document.getElementById('addButton');
+            const cancelButton = document.getElementById('cancelButton');
+            const publishButton = document.getElementById('publishButton');
+            const thoughtInput = document.getElementById('thoughtInput');
+            const charCounter = document.getElementById('charCounter');
+
+            addButton.addEventListener('click', () => {
+                modal.classList.add('active');
+                thoughtInput.value = '';
+                thoughtInput.focus();
+                updateCharCounter();
+            });
+
+            cancelButton.addEventListener('click', () => {
+                modal.classList.remove('active');
+            });
+
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('active');
+                }
+            });
+
+            thoughtInput.addEventListener('input', updateCharCounter);
+
+            publishButton.addEventListener('click', async () => {
+                const text = thoughtInput.value.trim();
+                if (text.length === 0) {
+                    alert('Введите текст мысли');
+                    return;
+                }
+                
+                publishButton.disabled = true;
+                await publishThought(text);
+                publishButton.disabled = false;
+                modal.classList.remove('active');
+            });
+
+            thoughtInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && e.ctrlKey) {
+                    publishButton.click();
+                }
+            });
+
+            function updateCharCounter() {
+                const length = thoughtInput.value.length;
+                charCounter.textContent = `${length}/200`;
+                
+                if (length > 180) {
+                    charCounter.classList.add('warning');
+                } else {
+                    charCounter.classList.remove('warning');
+                }
+                
+                publishButton.disabled = length === 0;
+            }
+        }
+
+        async function initializeMap() {
+            if (typeof maplibregl === 'undefined') {
+                console.error('MapLibre GL JS not loaded');
+                return;
+            }
+
+            try {
+                map = new maplibregl.Map({
+                    container: 'map',
+                    style: 'https://tiles.openfreemap.org/styles/liberty',
+                    center: [20, 0],
+                    zoom: 2
+                });
+
+                map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+                map.on('load', async () => {
+                    console.log('Map loaded successfully');
+                    
+                    // Загружаем существующие мысли
+                    const snapshot = await db.ref('thoughts').once('value');
+                    const data = snapshot.val();
+                    
+                    if (data) {
+                        thoughts = Object.values(data);
+                        thoughts.forEach(createMarker);
+                        updateMarkersVisibility();
+                    }
+                });
+
+                map.on('zoom', () => {
+                    updateMarkersVisibility();
+                });
+
+                map.on('move', () => {
+                    updateMarkersVisibility();
+                });
+            } catch (error) {
+                console.error('Error initializing map:', error);
+            }
+        }
+
+        window.addEventListener('load', async () => {
+            initializeUI();
+            await initializeMap();
+        });
+    </script>
+</body>
+</html>
